@@ -9,6 +9,7 @@ from typing import List
 import tempfile
 
 from singer_sdk.sinks import BatchSink
+from singer_sdk.helpers._typing import DatetimeErrorTreatmentEnum
 
 from target_athena import athena
 from target_athena import s3
@@ -49,6 +50,10 @@ class AthenaSink(BatchSink):
     @staticmethod
     def _clean_table_name(stream_name):
         return stream_name.replace("-", "_")
+    
+    @property
+    def datetime_error_treatment(self):
+        return DatetimeErrorTreatmentEnum.NULL
 
     def process_batch(self, context: dict) -> None:
         """Write any prepped records out and return only once fully written."""
