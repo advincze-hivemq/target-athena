@@ -30,6 +30,9 @@ def create_client(config, logger: Logger):
     aws_profile = config.get("aws_profile") or os.environ.get("AWS_PROFILE")
     aws_region = config.get("aws_region") or os.environ.get("AWS_REGION")
     s3_staging_dir = config.get("s3_staging_dir") or os.environ.get("S3_STAGING_DIR")
+    athena_workgroup = config.get("athena_workgroup") or os.environ.get(
+        "ATHENA_WORKGROUP"
+    )
     logger.info(f"Using Athena region {aws_region}")
 
     # AWS credentials based authentication
@@ -40,6 +43,7 @@ def create_client(config, logger: Logger):
             aws_session_token=aws_session_token,
             region_name=aws_region,
             s3_staging_dir=s3_staging_dir,
+            work_group=athena_workgroup,
         ).cursor()
 
     # AWS Profile based authentication
@@ -48,8 +52,10 @@ def create_client(config, logger: Logger):
             profile_name=aws_profile,
             region_name=aws_region,
             s3_staging_dir=s3_staging_dir,
+            work_group=athena_workgroup,
         ).cursor()
     return cursor
+
 
 def execute_sql(sql, athena_client):
     """Run sql expression using athena client
@@ -59,6 +65,7 @@ def execute_sql(sql, athena_client):
         athena_client ([type]): [description]
     """
     athena_client.execute(sql)
+
 
 def table_exists(athena_client, database, table_name):
     """Determine if a table already exists in athena.
@@ -77,10 +84,11 @@ def table_exists(athena_client, database, table_name):
     else:
         return True
 
+
 # This function is borrowed direclty from https://github.com/datadudes/json2hive/blob/master/json2hive/generators.py
 def generate_column_definitions(schema, level=0):
     """Generates stringified column definitions for interpolation in the Hive table creation
-    by recursively traversing a nested schema dictionary and inferring type according to 
+    by recursively traversing a nested schema dictionary and inferring type according to
     supported Hive types.
 
     Args:
@@ -155,10 +163,10 @@ def generate_column_definitions(schema, level=0):
             )
     return field_separator.join(field_definitions)
 
-def generate_create_database_ddl(
-    database: str="default"
-)-> None:
+
+def generate_create_database_ddl(database: str = "default") -> None:
     return f"CREATE DATABASE IF NOT EXISTS {database};"
+
 
 # This function is borrowed direclty from https://github.com/datadudes/json2hive/blob/master/json2hive/generators.py
 def generate_create_table_ddl(
@@ -169,8 +177,8 @@ def generate_create_table_ddl(
     database="default",
     external=True,
     row_format="org.apache.hadoop.hive.serde2.OpenCSVSerde",
-    serdeproperties = "'case.insensitive'='true'",
-    skip_header = True,
+    serdeproperties="'case.insensitive'='true'",
+    skip_header=True,
 ):
     """Generate DDL for Hive table creation.
 
@@ -191,11 +199,17 @@ def generate_create_table_ddl(
     else:
         field_definitions = ",\n".join(["  `{}` STRING".format(_) for _ in headers])
     external_marker = "EXTERNAL " if external else ""
-    row_format = "ROW FORMAT SERDE '{serde}'".format(serde=row_format) if row_format else ""
+    row_format = (
+        "ROW FORMAT SERDE '{serde}'".format(serde=row_format) if row_format else ""
+    )
     stored = "\nSTORED AS TEXTFILE"
-    serdeproperties = "\nWITH SERDEPROPERTIES ({})".format(serdeproperties) if serdeproperties else ""
+    serdeproperties = (
+        "\nWITH SERDEPROPERTIES ({})".format(serdeproperties) if serdeproperties else ""
+    )
     location = "\nLOCATION '{}'".format(data_location) if external else ""
-    tblproperties = '\nTBLPROPERTIES ("skip.header.line.count" = "1")' if skip_header else ""
+    tblproperties = (
+        '\nTBLPROPERTIES ("skip.header.line.count" = "1")' if skip_header else ""
+    )
     statement = """CREATE {external_marker}TABLE IF NOT EXISTS {database}.{table} (
 {field_definitions}
 )
@@ -212,6 +226,7 @@ def generate_create_table_ddl(
     )
     return statement
 
+
 def create_or_replace_table(
     client,
     table,
@@ -221,7 +236,7 @@ def create_or_replace_table(
     database="default",
     external=True,
     row_format="org.apache.hadoop.hive.serde2.OpenCSVSerde",
-    skip_header = True,
+    skip_header=True,
 ):
     if table_exists(athena_client=client, database=database, table_name=table):
         # alter table prefix
@@ -235,8 +250,10 @@ def create_or_replace_table(
         if not headers:
             field_definitions = generate_column_definitions(schema["properties"])
         else:
-            field_definitions = ", ".join(["`{}` STRING".format(_) for _ in headers])        
-        ddl = alter_table + "REPLACE COLUMNS (field_definitions}".format(field_definitions)
+            field_definitions = ", ".join(["`{}` STRING".format(_) for _ in headers])
+        ddl = alter_table + "REPLACE COLUMNS (field_definitions}".format(
+            field_definitions
+        )
         execute_sql(ddl, client)
 
         # update location
@@ -244,9 +261,14 @@ def create_or_replace_table(
         execute_sql(ddl, client)
 
         # skip_header
-        ddl = alter_table + "SET TBLPROPERTIES ('skip.header.line.count'='{skip}');".format(skip=int(skip_header))
-        execute_sql(ddl, client)        
-    
+        ddl = (
+            alter_table
+            + "SET TBLPROPERTIES ('skip.header.line.count'='{skip}');".format(
+                skip=int(skip_header)
+            )
+        )
+        execute_sql(ddl, client)
+
     else:
         ddl = generate_create_table_ddl(
             table=table,
