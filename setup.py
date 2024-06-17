@@ -23,6 +23,7 @@ setup(name="target-athena",
           'inflection==0.5.1',
           'boto3==1.17.39',
           'PyAthena==2.2.0',
+          'tenacity>=8.2.3,<8.4.0',
       ],
       extras_require={
           "test": [
